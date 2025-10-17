@@ -7,4 +7,4 @@ Within the cogniven_code folder there are 5 directories; cogniven_account, cogni
     - cogniven_gamelinks: Cogniven-specific block to supply links to games.  
     - cogniven_webform: Customizations for the Webform module to collect specific data  
   
- - Imaiy contains the code for the game Battle for Imaiy with a screenshot included in repo. No artwork is inlcluded.
+ - Imaiy contains the code for the game Battle for Imaiy with a screenshot included in repo. No other artwork is inlcluded.
