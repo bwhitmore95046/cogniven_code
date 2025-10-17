@@ -1,0 +1,36 @@
+<?php
+/**
+* Implementation of hook_form_alter().
+*/
+function cogniven_webform_form_alter(&$form, &$form_state, $form_id) {
+  // Add submit handler for anything with questionnanything with questionnaire in id
+  if ($form_id == "webform_client_form_82") {
+
+    // Add the submit handler after the existing Webform submit handler,
+    // but before the second Webform handler. Pop off the first one and add
+    // ours second.
+    $first = array_shift($form['#submit']);
+    array_unshift($form['#submit'], $first, 'cogniven_webform_submit');
+  }
+}
+
+
+/**
+* Submit handler for Webform ID #44.
+*/
+function cogniven_webform_submit($form, &$form_state) {
+  global $user;
+
+  if ($user->name != "") {
+    // add game credits to account
+    $addpc = 1500;
+
+    if (module_load_include('inc', 'cogniven_account', 'cogniven_account_password') !== FALSE) {
+      if (cogniven_account_user_update_pcredits($user->name, $addpc)) {
+        drupal_set_message(t("Delivered " . number_format($addpc) . " premium credits to $user->name"));
+      }
+    }
+  }
+}
+
+?>

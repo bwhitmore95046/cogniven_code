@@ -1,0 +1,8 @@
+;$Id$
+name = Cogniven Game Links
+description = Cogniven-specific block to supply links to games.
+package = Cogniven custom
+core = 7.x
+files[] = cogniven_gamelinks.module
+files[] = cogniven_gamelinks.test
+dependencies[] = cogniven_account

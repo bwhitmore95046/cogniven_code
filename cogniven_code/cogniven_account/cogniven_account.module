@@ -1,0 +1,122 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * A module modifying the way accounts are treated to comply with Cogniven Studios requirements.
+ *
+ * This module alter the way that user accounts are handled.  The following changes were made:
+ *     Passwords authentication is done using our custom password handlers in cogniven_account_password.inc.
+ *     Password tips were changed to indicate the password must be a certain length instead of suggested that it be at least length 6 (actual enforcement done using LoginToboggan)
+ *     Added notices that email addresses could not be changed after the creation of the account during account registration and on the account info screen.
+ *     Makes the email address field read only. If someone tries to change their email address, it will block the attempt and log an alert.
+ *     Note: ONLY user1 is allowed to modify email addresses for any account.  Not even admins are given that permission.
+ */
+
+/**
+ * Implements hook_page_alter().
+ */
+function cogniven_account_page_alter(&$page) {
+  if (isset($page['content']['system_main']['#form_id'])) {
+    switch($page['content']['system_main']['#form_id']) {
+      case 'user_profile_form':
+	    $page['content']['system_main']['account']['pass']['#attached']['js']['1']['data']['password']['tooShort'] = t('Must be at least !min_pass_length characters', array('!min_pass_length' => t(variable_get('logintoboggan_minimum_password_length', 0))));
+		break;
+		
+	  default:
+	    break;
+    }
+  }
+  if (isset($page['sidebar_first']['fbconnect_fbconnect_login'])) {
+    $fbblock = $page['sidebar_first']['fbconnect_fbconnect_login'];
+//    drupal_set_message(t(var_export($fbblock, true)));
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function cogniven_account_form_alter(&$form, &$form_state, $form_id) {
+  global $user;
+  
+  switch ($form_id) {
+    case 'user_register_form':
+      $form['account']['mail']['#description'] = t('Your email address will remain the same for the life of the account.  If you lose access to the email, you may also lose access to the account.  All e-mails from the system will be sent to this address.  The e-mail address is not made public and will only be used if you wish to receive a new password or wish to receive certain news or notifications by e-mail. If you have your email service configured to automatically block emails from unapproved senders, you must add admin@cogniven.com to your approved list before creating your account on this site.');
+      break;
+        
+    case 'user_profile_form':
+      //make sure the user can't change their email address
+      cogniven_account_fix_profile_page($form, $form_state);
+      break;
+    case 'user_login':
+    case 'user_login_block':
+      //The 'Remember me' checkbox should default to unchecked.
+      $form['remember_me']['#default_value'] = 0;
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * Sets up the account profile page to be compatible with Cogniven Studios requirements.
+ */
+function cogniven_account_fix_profile_page(&$form, &$form_state) {
+  global $user;
+    
+  if ($user->uid != 1) {
+    unset($form['account']['mail']['#required']);
+    $form['account']['mail']['#attributes']['readonly'] = 'readonly';
+  }
+  
+  //update email field description
+  $form['account']['mail']['#description'] = t('Your email address will remain the same for the life of the account.  If you lose access to the email, you may also lose access to the account.  All e-mails from the system will be sent to this address.  The e-mail address is not made public and will only be used if you wish to receive a new password or wish to receive certain news or notifications by e-mail.');
+  
+  //update current password field description
+  $request_new = l(t('Request new password'), 'user/password', array('attributes' => array('title' => t('Request new password via e-mail.'))));
+  $form['account']['current_pass']['#description'] = t('Enter your current password to change the %pass. !request_new.', array('%pass' => t('Password'), '!request_new' => $request_new));
+  
+  //update the confirm password description
+  $form['account']['pass']['#description'] = t('To change the current user password, enter the new password in both fields.  Passwords must be at least !min_pass_length character long.', array('!min_pass_length' => t(variable_get('logintoboggan_minimum_password_length', 0))));
+  
+  //replace the default submit function with our custom submit function
+  $form['#submit'][0] = 'cogniven_account_profile_submit';
+}
+
+/**
+ * Checks if an attempt to alter emails was made.  If there was, it resets the email address to its previous value and then posts an alert in the log.
+ */
+function cogniven_account_profile_submit(&$form, &$form_state)
+{
+  global $user;
+//  dpm($form, "form");
+//  dpm($form_state, "form_state");
+  
+  if ($user->uid != 1) {
+    //if the user tried to change email, flag it as a malicious attempt to change email then reset email
+	
+	//$form_state['build_info']['args']['0']->mail = the original email on the account.
+	//$form_state['values']['mail'] = the submitted value for the new email
+	
+    if ($form_state['values']['mail'] != $form_state['build_info']['args']['0']->mail) {
+      form_set_error('Cogniven Account', t('Cannot change email.  New email entry ignored.'));
+      watchdog('Cogniven Account', 'Account %email: attempted to change email address.', array('%email' => $user->mail), WATCHDOG_ALERT, $link = NULL);
+      $form_state['values']['mail'] = $form_state['build_info']['args'][0]['mail'];
+    }
+  }
+  
+  //if the user tries to change password, capture and handle that ourselves.
+  
+  if (trim($form_state['input']['pass']['pass1']) != "") {
+    require_once DRUPAL_ROOT . '/' . variable_get('password_inc', 'includes/password.inc');
+	if (cogniven_account_change_password($form_state['values']['mail'], trim($form_state['input']['pass']['pass1']))) {
+	  drupal_set_message(t('Password has been updated.'), $type = 'status');
+	}
+	else {
+	  drupal_set_message(t('Error changing password.'), $type = 'error');
+	}
+  }
+  
+  //current password and password matching has already been validated by drupal, password length has been validated by logintoboggin
+  user_profile_form_submit($form, $form_state);
+}

@@ -1,0 +1,96 @@
+<?php
+
+/**
+ * @file
+ * Adds an inline form to the Account Information checkout pane to allow specification of delivery target.
+ */
+
+/**
+ * implementation of hook_hook_info_alter()
+ */
+function commerce_checkout_target_hook_info_alter(&$hooks) {
+   $hooks['form_alter']['group'] = 'form';
+}
+
+
+function commerce_checkout_target_commerce_checkout_info_alter(&$checkout_panes) {
+}
+
+
+function commerce_checkout_target_commerce_checkout_pane_info() {
+   $checkout_panes['target'] = array(
+      'title' => t('Delivery information'),
+      'base' => 'commerce_checkout_target',
+      'callbacks' => array(
+         'settings_form' => 'commerce_checkout_target_settings_form',
+         'checkout_form' => 'commerce_checkout_target_checkout_form',
+         'checkout_form_validate' => 'commerce_checkout_target_checkout_form_validate',
+         'checkout_form_submit' => 'commerce_checkout_target_checkout_form_submit',
+         'review' => 'commerce_checkout_target_review',
+      ),
+      'page' => 'checkout',
+      'weight' => -7,
+      'pane_id' => 'target',
+      'collapsible' => FALSE,
+      'collapsed' => FALSE,
+      'enabled' => TRUE,
+      'review' => TRUE,
+      'file' => 'includes/commerce_checkout_target.checkout_pane.inc',
+   );
+
+   return $checkout_panes;
+}
+
+function commerce_checkout_target_commerce_checkout_complete($order) {
+    $success = false;
+    $products = array();
+
+    if (!empty($order)) {
+        $target = $order->field_target_account['und'][0]['value'];
+
+        $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+        // Populate the array of the quantities of the products on the order.
+        foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
+          if (in_array($line_item_wrapper->type->value(), commerce_product_line_item_types())) {
+            // Extract a product ID and quantity from the line item.
+            $line_item_sku = $line_item_wrapper->commerce_product->sku->value();
+            $quantity = $line_item_wrapper->quantity->value();
+
+            // Update the product's quantity value.
+            if (empty($products[$line_item_sku])) {
+              $products[$line_item_sku] = $quantity;
+            }
+            else {
+              $products[$line_item_sku] += $quantity;
+            }
+          }
+        }
+        $addpc = 0;
+        foreach ($products as $sku => $quantity) {
+            switch ($sku) {
+                case "PGC_10k":
+                    $addpc += (10000 * floor($quantity));
+                    break;
+                case "PGC_20k7":
+                    $addpc += (21400 * floor($quantity));
+                    break;
+                case "PGC_50k10":
+                    $addpc += (55000 * floor($quantity));
+                    break;
+                case "PGC_100k15":
+                    $addpc += (115000 * floor($quantity));
+                    break;
+            }
+        }
+    }
+    if (module_load_include('inc', 'cogniven_account', 'cogniven_account_password') !== FALSE) {
+        if (cogniven_account_user_update_pcredits($target, $addpc)) {
+            drupal_set_message(t("Delivered " . number_format($addpc) . " premium credits to $target"));
+            $order->field_delivered = array( 'und' => array( 0 => array( 'value' => 1 )));
+            commerce_order_save($order);
+        }
+    }
+}
+
+
+?>

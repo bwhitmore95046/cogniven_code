@@ -1,0 +1,9 @@
+;$Id$
+name = Cogniven Account
+description = Cogniven-specific modifications to handle cogniven accounts and game logins.
+package = Cogniven custom
+core = 7.x
+files[] = cogniven_account.module
+files[] = cogniven_account_password.inc
+dependencies[] = logintoboggan
+dependencies[] = remember_me

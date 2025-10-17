@@ -1,0 +1,309 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * A module creating a block showing games from Cogniven Studios
+ *
+ * This module creates a block to display all of the game servers from Cogniven Studios sorted by game type then servers where the user is active.
+ * It will also collect any information of the current users player records from those games.
+ */
+
+/**
+ * These database constants must allow access to the cogniven database containing the 'games' table which holds the information needed to gather game server data.
+ */
+define ('DBHOST_LOCAL', 'localhost');
+define ('DBUSER_LOCAL', 'root');
+define ('DBPASS_LOCAL', '17157');
+define ('DBNAME_LOCAL', 'gamelogin');
+
+define('KEY_LENGTH_MIN', 200);
+define('KEY_LENGTH_MAX', 300);
+  
+/**
+* Implements hook_permission().
+*/
+function cogniven_gamelinks_permission() {
+  return array(
+    'view development games' => array(
+      'title' => t('View the development links for games.'),
+      'description' => t('Displays and allows the user to connect to development versions of the games.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_user_login().
+ */
+function cogniven_gamelinks_user_login(&$edit, $account) {
+  global $user;
+  
+  $user_key = generate_key();
+  
+  $dbhost = DBHOST_LOCAL;
+  $dbuser = DBUSER_LOCAL;
+  $dbpass = DBPASS_LOCAL;
+  $dbname = DBNAME_LOCAL;
+  
+  $db = mysql_connect($dbhost, $dbuser, $dbpass);
+  if ($db && mysql_select_db($dbname, $db)) {
+    $query = "replace into gamelinks set email = '" . $user->mail . "', server = 'account', cogniven_key = '" . $user_key . "'";
+    $result = mysql_query($query, $db);
+    if (!$result) {
+      $key = '';
+    }
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function cogniven_gamelinks_theme($existing, $type, $theme, $path) {
+  return array(
+    'cogniven_gamelinks' => array(
+      'variables' => array('data' => NULL),
+    ),
+  );
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function cogniven_gamelinks_block_info() {
+  $blocks = array();
+
+  $blocks['gamelinks'] = array(
+    'info' => t('A list of Cogniven Studios game servers.'),
+    'cache' => DRUPAL_NO_CACHE,
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function cogniven_gamelinks_block_view($block_name = '') {
+
+  switch ($block_name) {
+    case 'gamelinks':
+      $list = build_server_list();
+      
+      $content = theme('cogniven_gamelinks', array('data' => $list));
+
+      $block = array(
+        'subject' => t('Game Servers'),
+        'content' => $content,
+      );
+
+      return $block;
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * This will query the games table in the gamelogin database for a list of all active servers.  It will then connect to each of those servers using the information in the games table and check if the current user has an active character in that game.
+ */
+function build_server_list()
+{
+  $list = array();
+  $dbhost = DBHOST_LOCAL;
+  $dbuser = DBUSER_LOCAL;
+  $dbpass = DBPASS_LOCAL;
+  $dbname = DBNAME_LOCAL;
+  
+  $db = mysql_connect($dbhost, $dbuser, $dbpass);
+  if ($db && mysql_select_db($dbname, $db)) {
+    $query = 'select * from games order by dorder';
+    $result = mysql_query($query, $db);
+    
+    while ($row = mysql_fetch_assoc($result)) {
+      $list['server'][] = $row;
+    }
+    
+    foreach ($list['server'] as &$server) {
+      get_server_info($server);
+    }
+
+  }
+  return $list;
+}
+
+/**
+ * This will take an array with the server information gained from the games table in gamelogin database and determine if the player is active and, if so, pull the player information.
+ */
+function get_server_info(&$server) {
+  global $user;
+  
+  if ($user->uid && $user->uid > 0) {
+    $user_email = $user->mail;
+  } else {
+    $user_email = 'anonymous';
+  }
+  
+  if ($server['game_server'])
+  {
+    $curl_handle = curl_init();
+    
+    curl_setopt($curl_handle, CURLOPT_URL, 'http://' . $server['serverip'] . ':' . $server['http_port'] . '/gamelinks/gamelinks_player_info.php'); 
+    curl_setopt($curl_handle, CURLOPT_RETURNTRANSFER, true); 
+    curl_setopt($curl_handle, CURLOPT_POST, true);
+    curl_setopt($curl_handle, CURLOPT_POSTFIELDS, 'email=' . $user_email);
+    curl_setopt($curl_handle, CURLOPT_TIMEOUT_MS, 1000); 
+    
+    $response = curl_exec($curl_handle);
+    
+    curl_close($curl_handle);
+    
+    $response = @unserialize(base64_decode($response));
+    
+    $server['connected'] = false;
+    $server['player'] = false;
+    
+    if (isset($response['result']) && $response['result'] == true) {
+      $server['player'] = $response['name'];
+    }
+    
+    if (isset($response['connected']) && $response['connected'] == true) {
+      $server['connected'] = $response['connected'];
+    }
+  }
+}
+
+/**
+ * This will output the theme for the gamelinks block
+ */
+function theme_cogniven_gamelinks($variables) {
+  global $user;
+  $image_path = '/' . drupal_get_path('module', 'cogniven_gamelinks') . '/graphics/';
+  $display = array();
+  
+  foreach($variables['data']['server'] as $server) {
+    if ($server['devel'] == false || user_access('view development games')) {
+      $display[$server['gamename']]['gamename'] = $server['gamename'];
+      if (isset($server['game_server']) && $server['game_server'] == false) {
+        $display[$server['gamename']]['guide'][] = $server;
+      } else if (isset($server['player']) && $server['player'] != false) {
+        $display[$server['gamename']]['active'][] = $server;
+      } else {
+        $display[$server['gamename']]['inactive'][] = $server;
+      }
+    }
+  }
+  
+  $output = '<div class="gamelinks">';
+  foreach($display as $game)
+  {
+    $base_class_name = strtolower(trim(str_replace(' ', '_', $game['gamename'])));
+    
+    $output = '<div class="' . $base_class_name . '_div">';
+      $output .= '<table class="' . $base_class_name . '_table">';
+      
+        $output .= '<caption class="' . $base_class_name . '_caption">';
+          $output .= $game['gamename'];
+        $output .= '</caption>';
+        
+        if (isset($game['guide'])) {
+          foreach($game['guide'] as $server) {
+            $output .= '<tr class="' . $base_class_name . '_guide">';
+              $output .= '<td class="' . $base_class_name . '_spacer">';
+              $output .= '</td>';
+              $output .= '<td class="' . $base_class_name . '_server">';
+                $output .= l($server['servername'], $server['serverlink']);
+              $output .= '</td>';
+            $output .= '</tr>';
+          }
+        }
+        
+        if (isset($game['active'])) {
+          foreach($game['active'] as $server) {
+            $output .= '<tr class="' . $base_class_name . '_active">';
+              $output .= '<td rowspan="2" class="' . $base_class_name . '_led">';
+                if ($server['connected'] == true) {
+                  $output .= '<img height="15" src="' . $image_path . 'connected.png" alt="O" />';
+                } else {
+                  $output .= '<img height="15" src="' . $image_path . 'disconnected.png" alt="_" />';
+                }
+              $output .= '</td>';
+              $output .= '<td class="' . $base_class_name . '_server">';
+                $output .= generate_gamelinks_link($server);
+              $output .= '</td>';
+            $output .= '</tr>';
+            $output .= '<tr class="' . $base_class_name . '_player">';
+              $output .= '<td class="' . $base_class_name . '_player">';
+                $output .= $server['player'];
+              $output .= '</td>';
+            $output .= '</tr>';
+          }
+        }
+        
+        if (isset($game['inactive'])) {
+          foreach($game['inactive'] as $server) {
+            $output .= '<tr class="' . $base_class_name . '_inactive">';
+              $output .= '<td class="' . $base_class_name . '_led">';
+                if ($server['connected'] == true) {
+                  $output .= '<img height="15" src="' . $image_path . 'connected.png" alt="O" />';
+                } else {
+                  $output .= '<img height="15" src="' . $image_path . 'disconnected.png" alt="_" />';
+                }
+              $output .= '</td>';
+              $output .= '<td class="' . $base_class_name . '_server">';
+                $output .= generate_gamelinks_link($server);
+              $output .= '</td>';
+            $output .= '</tr>';
+          }
+        }
+        
+      $output .= '</table>';
+    $output .= '</div>';
+  }
+  $output .= '</div>';
+  
+  
+  return $output;
+}
+
+function generate_gamelinks_link($server) {
+  global $user;
+  
+  if ($server['connected'] == true && $user->uid > 0) {
+    $dbhost = DBHOST_LOCAL;
+    $dbuser = DBUSER_LOCAL;
+    $dbpass = DBPASS_LOCAL;
+    $dbname = DBNAME_LOCAL;
+    
+    $cookie_expiration = ini_get('session.cookie_lifetime');
+
+    if ($cookie_expiration != 0) {
+        $cookie_expiration += $user->login;
+    }
+    
+    $db = mysql_connect($dbhost, $dbuser, $dbpass);
+    if ($db && mysql_select_db($dbname, $db)) {
+      $query = "select cogniven_key from gamelinks where email = '" . $user->mail . "' and server = 'account'";
+      $result = mysql_query($query, $db);
+      if ($result  && mysql_num_rows($result) > 0) {
+        $row = mysql_fetch_row($result);
+        
+        $path = drupal_get_path('module', 'cogniven_gamelinks') . '/php/gamelinks_redirect.php?email=' . $user->mail . '&login_key=' . $row[0] . '&server_link=' . $server['serverlink'] . ':' . $server['https_port'] . '&expiration=' . $cookie_expiration;
+        
+        return '<a href="https://' . $_SERVER['SERVER_NAME'] . '/' . $path . '" target="' . $user->mail . $server['servername'] . '">' . $server['servername'] . '</a>';
+      }
+    }
+  }
+  
+  return $server['servername'];
+}
+
+function generate_key() {
+  $key_characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  $key = "";
+  $key_length = mt_rand(KEY_LENGTH_MIN, KEY_LENGTH_MAX);
+  for ($index = 0; $index < $key_length; $index++) {
+    $key .= $key_characters[mt_rand(0, strlen($key_characters) - 1)];
+  }
+  
+  return $key;
+}

@@ -1,0 +1,7 @@
+name = Cogniven Webform Mods
+description = Customizations for the Webform module.
+core = 7.x
+package = Cogniven custom
+dependencies[] = webform
+dependencies[] = cogniven_account
+

@@ -1,0 +1,13 @@
+name = Cogniven Target
+description = Adds a pane to the checkout process to allow specification of virtual goods delivery target.
+package = Cogniven custom
+dependencies[] = commerce_checkout
+dependencies[] = commerce_order
+dependencies[] = commerce_payment
+dependencies[] = cogniven_account
+core = 7.x
+
+files[] = commerce_checkout_target.module
+files[] = commerce_checkout_target.inc
+files[] = includes/commerce_checkout_target.checkout_pane.inc
+

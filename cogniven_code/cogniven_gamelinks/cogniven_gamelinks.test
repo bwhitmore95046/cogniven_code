@@ -1,0 +1,35 @@
+<?php
+
+/**
+* @file
+* Tests for the Cogniven Game Links
+*/
+class CognivenGameLinksTestCase extends DrupalWebTestCase {
+  public function setUp() {
+    parent::setUp('cogniven_gamelinks');
+  }
+  
+  public function getInfo() {
+    return array(
+      'name' => 'Cogniven Game Links block functionality',
+      'description' => 'Test blocks in the Cogniven Game Links module.',
+      'group' => 'Cogniven Games',
+    );
+  }
+  
+  public function testBlockInfo() {
+    $info = module_invoke('cogniven_gamelinks', 'block_info');
+	
+    $this->assertEqual(1, count($info), t('Module defines 1 block.'));
+	  
+    $this->assertTrue(isset($info['gamelinks']), t('Game links exist.'));
+  }
+  
+  public function testBlockView() {
+    $data = module_invoke('cogniven_gamelinks', 'block_view', 'gamelinks');
+	
+    $this->assertTrue(is_array($data), t('Block returns renderable array.'));
+	
+    $this->assertEqual(t('Game Servers'), $data['subject'], t('Subject is set'));
+  }
+}
