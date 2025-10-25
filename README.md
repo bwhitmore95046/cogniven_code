@@ -1,3 +1,5 @@
+Note from William Whitmore
+
 This code is here for sample purposes and is not a complete package.
 
 Within the cogniven_code folder there are 5 directories; cogniven_account, cogniven_checkout, cogniven_gamelinks, cogniven_webform, and Imaiy  
